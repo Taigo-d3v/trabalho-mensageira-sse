@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mensageira SSE - Tiago Godinho Freitas</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 600px;
+            background-color: #fff;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-top: 50px;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 80vh;
+        }
+
+        header {
+            background-color: #075e54;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        #messages {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background-color: #e5ddd5;
+        }
+
+        .message {
+            max-width: 70%;
+            padding: 8px 12px;
+            border-radius: 8px;
+            position: relative;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .message.received {
+            align-self: flex-start;
+            background-color: #fff;
+            border-bottom-left-radius: 0;
+        }
+
+        .message.sent {
+            align-self: flex-end;
+            background-color: #dcf8c6;
+            border-bottom-right-radius: 0;
+        }
+
+        .sender {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 4px;
+            color: #075e54;
+        }
+
+        .timestamp {
+            font-size: 0.7rem;
+            color: #999;
+            text-align: right;
+            display: block;
+            margin-top: 4px;
+        }
+
+        .input-area {
+            padding: 15px;
+            background-color: #f0f0f0;
+            display: flex;
+            gap: 10px;
+            border-top: 1px solid #ddd;
+        }
+
+        input[type="text"] {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 20px;
+            outline: none;
+            font-size: 1rem;
+        }
+
+        #senderInput {
+            width: 100px;
+        }
+
+        #messageInput {
+            flex-grow: 1;
+        }
+
+        button {
+            background-color: #075e54;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #128c7e;
+        }
+
+        .status {
+            font-size: 0.8rem;
+            padding: 5px;
+            text-align: center;
+            background-color: #fff;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>Mensageira SSE - Tiago Godinho Freitas</header>
+    <div id="connectionStatus" class="status">Conectando...</div>
+    <div id="messages"></div>
+    <div class="input-area">
+        <input type="text" id="senderInput" placeholder="Seu nome" value="Tiago">
+        <input type="text" id="messageInput" placeholder="Digite uma mensagem..." onkeypress="handleKeyPress(event)">
+        <button onclick="sendMessage()">Enviar</button>
+    </div>
+</div>
+
+<script>
+    const messagesDiv = document.getElementById('messages');
+    const messageInput = document.getElementById('messageInput');
+    const senderInput = document.getElementById('senderInput');
+    const statusDiv = document.getElementById('connectionStatus');
+
+    // Conecta ao endpoint SSE
+    const eventSource = new EventSource('/api/messages/subscribe');
+
+    eventSource.onopen = () => {
+        statusDiv.innerText = 'Conectado ao servidor';
+        statusDiv.style.color = 'green';
+    };
+
+    eventSource.onerror = (e) => {
+        statusDiv.innerText = 'Erro na conexão. Tentando reconectar...';
+        statusDiv.style.color = 'red';
+    };
+
+    // Ouve eventos do tipo 'message' (definido no backend via .name("message"))
+    eventSource.addEventListener('message', (event) => {
+        const message = JSON.parse(event.data);
+        displayMessage(message);
+    });
+
+    // Ouve pings de heartbeat para manter a conexão ativa
+    eventSource.addEventListener('ping', () => {
+        console.log('Ping de heartbeat recebido do servidor.');
+    });
+
+    function displayMessage(message) {
+        const messageElement = document.createElement('div');
+        const isMe = message.sender === senderInput.value;
+        
+        messageElement.className = `message ${isMe ? 'sent' : 'received'}`;
+        
+        const time = new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        messageElement.innerHTML = `
+            <span class="sender">${message.sender}</span>
+            <span>${message.content}</span>
+            <span class="timestamp">${time}</span>
+        `;
+        
+        messagesDiv.appendChild(messageElement);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    async function sendMessage() {
+        const content = messageInput.value.trim();
+        const sender = senderInput.value.trim();
+
+        if (!content || !sender) return;
+
+        const message = { sender, content };
+
+        try {
+            const response = await fetch('/api/messages/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(message)
+            });
+
+            if (response.ok) {
+                messageInput.value = '';
+            } else {
+                console.error('Falha ao enviar mensagem');
+            }
+        } catch (error) {
+            console.error('Erro:', error);
+        }
+    }
+
+    function handleKeyPress(event) {
+        if (event.key === 'Enter') {
+            sendMessage();
+        }
+    }
+</script>
+
+</body>
+</html>
